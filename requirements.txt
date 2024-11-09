@@ -4,3 +4,4 @@ streamlit
 fpdf
 xlsxwriter
 openpyxl
+pytz

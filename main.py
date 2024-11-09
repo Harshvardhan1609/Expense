@@ -8,6 +8,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from fpdf import FPDF
 import os
+import pytz
+
 
 # Function to create the SQLite database and table
 def create_table():
@@ -15,10 +17,10 @@ def create_table():
     cursor = conn.cursor()
     
     # Create the expenses table if it doesn't exist
-    cursor.execute(''' 
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date TIMESTAMP,
             amount REAL NOT NULL,
             purpose TEXT NOT NULL,
             bill_image BLOB,
@@ -34,10 +36,15 @@ def create_table():
 def insert_expense(amount, purpose, purchase_date, bill_image):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute(''' 
-        INSERT INTO expenses (amount, purpose, purchase_date, bill_image) 
-        VALUES (?, ?, ?, ?)
-    ''', (amount, purpose, purchase_date, bill_image))
+
+    # Get the current time in IST (Indian Standard Time)
+    india_timezone = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(india_timezone).strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute('''
+        INSERT INTO expenses (date, amount, purpose, purchase_date, bill_image) 
+        VALUES (?, ?, ?, ?, ?)
+    ''', (current_time, amount, purpose, purchase_date, bill_image))
     conn.commit()
     conn.close()
 
