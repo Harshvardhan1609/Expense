@@ -1,3 +1,6 @@
 plotly
 pandas
 streamlit
+fpdf
+xlsxwriter
+openpyxl

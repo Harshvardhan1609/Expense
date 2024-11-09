@@ -6,6 +6,8 @@ import pandas as pd
 from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
+from fpdf import FPDF
+import os
 
 # Function to create the SQLite database and table
 def create_table():
@@ -92,6 +94,55 @@ def update_expense(expense_id, amount, purpose, purchase_date, bill_image):
     ''', (amount, purpose, purchase_date, bill_image, expense_id))
     conn.commit()
     conn.close()
+
+# Function to retrieve expenses within the given date range
+def get_expenses_by_date_range(start_date, end_date):
+    print("sql called")
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM expenses WHERE purchase_date BETWEEN ? AND ?", (start_date, end_date))
+    records = cursor.fetchall()
+    conn.close()
+    return records
+
+# Function to generate PDF report
+
+def download_expense_report_as_excel(expenses):
+    # Check if expenses are passed correctly
+    # print(f"Expenses passed to the function: {expenses}")
+
+    # Check if there are any records
+    if not expenses:
+        print("No expenses found.")
+        return None  # Return None if no expenses are available
+
+    # Convert the expenses data to a pandas DataFrame
+    df = pd.DataFrame(data=expenses,columns=["ID", "Date", "Amount", "Purpose", "Purchase Date","BILL"])
+
+    # Check if DataFrame is populated correctly
+    # print(f"DataFrame before date conversion: {df.head()}")
+
+    # Convert 'Purchase Date' to datetime (handling any invalid or missing dates)
+    # df["Purchase Date"] = pd.to_datetime(df["Purchase Date"], errors='coerce', dayfirst=True)
+
+    # # Check after conversion
+    # print(f"DataFrame after date conversion: {df.head()}")
+
+    # # Handle any NaT (Not a Time) values in 'Purchase Date'
+    # df = df.dropna(subset=["Purchase Date"])
+
+    # # Remove the "Bill" column if you don't want to include the binary data (images)
+    df = df.drop(["Purchase Date","BILL"],axis=1)
+
+    # Save the DataFrame to an Excel file in-memory using openpyxl engine
+    excel_file = io.BytesIO()
+    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+
+    # Rewind the buffer to the beginning before downloading
+    excel_file.seek(0)
+
+    return excel_file
 
 # Create the table when the script is run
 create_table()
@@ -227,15 +278,16 @@ elif page == "Search Expenses":
                 st.markdown(f"**Purpose**: {expense[3]}")
                 st.markdown(f"**Purchase Date**: {expense[5]}")
 
-                # Show 'Show Bill' button if a bill exists
+                # Show 'Download Bill' button if a bill exists
                 if expense[4]:  # Check if the bill is not None (there is a bill image)
-                    if st.button(f"Show Bill for Expense ID {expense[0]}", key=expense[0]):
-                        try:
-                            # If bill exists, convert the binary data to an image
-                            bill_image = BytesIO(expense[4])  # Convert BLOB data to image
-                            st.image(bill_image, caption="Bill Image", use_column_width=True)
-                        except Exception as e:
-                            st.error(f"Error displaying bill: {e}")
+                    bill_image = BytesIO(expense[4])  # Convert BLOB data to image
+                    bill_image.seek(0)  # Rewind the image stream to the start
+                    st.download_button(
+                        label="Download Bill",
+                        data=bill_image,
+                        file_name=f"bill_expense_{expense[0]}.jpg",  # You can choose a more meaningful filename
+                        mime="image/jpeg"  # Set mime type for image
+                    )
         else:
             st.warning("No expenses found for the given criteria.")
 
@@ -274,8 +326,24 @@ elif page == "Modify Expense":
 # Download Reports Page
 elif page == "Download Reports":
     st.header("Download Expense Reports")
-    
+
+    # Date range for report filtering
+    start_date = st.date_input("Start Date", min_value=datetime(2020, 1, 1), value=datetime.today())
+    end_date = st.date_input("End Date", min_value=datetime(2020, 1, 1), value=datetime.today())
+
+    # Fetch expenses within the selected date range
+    expenses = get_expenses_by_date_range(start_date, end_date)
+
     if st.button("Download Report"):
-        expenses = get_expenses()
-        df = pd.DataFrame(expenses, columns=["ID", "Date", "Amount", "Purpose", "Purchase Date", "Bill"])
-        st.download_button("Download as CSV", df.to_csv(index=False), file_name="expense_report.csv")
+        # Ensure there are expenses for the given date range
+        if expenses:
+            # Generate and download Excel file
+            excel_file = download_expense_report_as_excel(expenses)
+            st.download_button(
+                label="Download as Excel",
+                data=excel_file,
+                file_name="expense_report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("No expenses found for the selected date range.")
