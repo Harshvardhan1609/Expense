@@ -10,7 +10,6 @@ from io import BytesIO
 
 # Function to create the SQLite database and tables for expenses and users
 def create_tables():
-    # Open the database connection
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
 
@@ -18,16 +17,14 @@ def create_tables():
     cursor.execute(''' 
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date TIMESTAMP,
             amount REAL NOT NULL,
             purpose TEXT NOT NULL,
             description TEXT,
             bill_image BLOB,
             purchase_date DATE,
             company_name TEXT,
-            contact_details TEXT,
-            username TEXT NOT NULL,  -- Added column for user association
-            FOREIGN KEY (username) REFERENCES users(username)  -- Adding foreign key constraint
+            contact_details TEXT
         )
     ''')
 
@@ -36,70 +33,19 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
-            role TEXT NOT NULL,
-            name TEXT,
-            contact_details TEXT,
-            total_expense REAL DEFAULT 0.0
+            role TEXT NOT NULL
         )
     ''')
 
     # Add admin user if not exists (username: radha, password: kalki)
     cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'radha'")
     if cursor.fetchone()[0] == 0:
-        # Hash the default password
         hashed_password = hashlib.sha256("kalki".encode()).hexdigest()
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", ("radha", hashed_password, "admin"))
 
-        # Insert the default admin user with name, contact_details, and role
-        cursor.execute("INSERT INTO users (username, password, role, name, contact_details) VALUES (?, ?, ?, ?, ?)", 
-                       ("radha", hashed_password, "admin", "Kalki", "9511506378"))
-        
-        # Commit the transaction
-        conn.commit()
-
-    # Close the connection
-    conn.close()
-
-def get_users():
-    # Open a database connection
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    
-    # Fetch users along with their total expense
-    cursor.execute(''' 
-        SELECT u.username, u.name, u.role, u.contact_details, 
-               IFNULL(SUM(e.amount), 0) AS total_expense
-        FROM users u
-        LEFT JOIN expenses e ON u.username = e.username
-        GROUP BY u.username
-    ''')
-    
-    users = cursor.fetchall()
-    
-    # Close the connection
-    conn.close()
-    
-    return users
-
-def get_users():
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT username, name, role, contact_details, total_expense FROM users")
-    users = cursor.fetchall()
-    conn.close()
-    return users
-
-
-def delete_user(username):
-    # Open a database connection
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    
-    # Delete the user from the users table
-    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
     conn.commit()
-
-    # Close the connection
     conn.close()
+
 # Function to authenticate user
 def authenticate_user(username, password):
     conn = sqlite3.connect("database.db")
@@ -132,44 +78,29 @@ def get_expenses_by_purpose_and_date_range(purpose, start_date, end_date):
     return records
 
 # Function to register a new user
-def register_user(username, password, role, name, contact_details):
+def register_user(username, password, role):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    cursor.execute("INSERT INTO users (username, password, role, name, contact_details) VALUES (?, ?, ?, ?, ?)", 
-                   (username, hashed_password, role, name, contact_details))
+    cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, hashed_password, role))
     conn.commit()
     conn.close()
 
 
 # Function to insert a new expense record into the database
 def insert_expense(amount, purpose, description, purchase_date, bill_image, company_name, contact_details):
-    # Get the username of the logged-in user from session state
-    username = st.session_state.get("username")
-
-    # If the username is not available, raise an error
-    if not username:
-        st.error("You must be logged in to add an expense.")
-        return
-
-    # Open a database connection
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
 
-    # Get the current time in India timezone
     india_timezone = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(india_timezone).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Insert the expense details, including the username from the session
     cursor.execute(''' 
-        INSERT INTO expenses (date, amount, purpose, description, purchase_date, bill_image, company_name, contact_details, username) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (current_time, amount, purpose, description, purchase_date, bill_image, company_name, contact_details, username))
-
-    # Commit the transaction and close the connection
+        INSERT INTO expenses (date, amount, purpose, description, purchase_date, bill_image, company_name, contact_details) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (current_time, amount, purpose, description, purchase_date, bill_image, company_name, contact_details))
     conn.commit()
     conn.close()
-    st.success("Expense added successfully!")
 
 # Function to retrieve all expenses
 def get_expenses():
@@ -314,9 +245,9 @@ with st.sidebar:
         
         # Show different pages based on user role
         if user_role == "admin":
-            page = st.selectbox("Navigate to", ["Home", "Add Expense", "Search Expenses", "Modify Expense", "Download Reports", "Delete Expense" , "Manage Users"])
+            page = st.selectbox("Navigate to", ["Home", "Add Expense", "Search Expenses", "Modify Expense", "Download Reports", "Delete Expense"])
         else:
-            page = st.selectbox("Navigate to", ["Home", "Add Expense", "Search Expenses", "Download Reports"])
+            page = st.selectbox("Navigate to", ["Home", "Add Expense", "Search Expenses", "Modify Expense", "Download Reports"])
         
         st.markdown("---")
         
@@ -351,8 +282,6 @@ elif page == "Register":
     with st.form("register_form"):
         new_username = st.text_input("Username")
         new_password = st.text_input("Password", type="password")
-        new_name = st.text_input("Full Name")
-        new_contact_details = st.text_input("Contact Details")
         role = st.selectbox("Role", ["Employee", "Developer"])  # 'admin' role should be limited to admins only
         register_button = st.form_submit_button("Register")
 
@@ -364,7 +293,7 @@ elif page == "Register":
         if cursor.fetchone()[0] > 0:
             st.error("Username already exists. Please choose a different username.")
         else:
-            register_user(new_username, new_password, role, new_name, new_contact_details)
+            register_user(new_username, new_password, role)
             st.success("User registered successfully!")
         conn.close()
 
@@ -394,7 +323,7 @@ elif page == "Home" and st.session_state.get("logged_in", False):
     st.subheader("Expense Breakdown")
 
     # Create DataFrame for expenses
-    expense_df = pd.DataFrame(expenses, columns=["ID", "Date", "Amount", "Purpose","Description", "Bill Image", "Purchase Date", "Company Name", "Contact Details", "username"])
+    expense_df = pd.DataFrame(expenses, columns=["ID", "Date", "Amount", "Purpose", "Description", "Bill Image", "Purchase Date", "Company Name", "Contact Details"])
     
     # Plot total expenses by purpose using Plotly
     st.subheader("Total Expenses by Purpose")
@@ -571,28 +500,7 @@ elif page == "Download Reports" and st.session_state.get("logged_in", False):
             st.warning("No expenses found for the selected date range.")
     # Report generation logic here...
 
-elif page == "Manage Users" and st.session_state.role == "admin":
-    st.header("Manage Users")
-    
-    # Fetch all users with their total expenses
-    users = get_users()
-
-    if users:
-        # Display the list of users in a table format
-        st.write("### User List")
-        for user in users:
-            username, name, role, contact_details, total_expense = user
-            st.write(f"**Username**: {username}, **Name**: {name}, **Role**: {role}, **Contact**: {contact_details}, **Total Expense**: ₹{total_expense:.2f}")
-            
-            # Delete user button
-            delete_button = st.button(f"Delete {username}")
-            if delete_button:
-                delete_user(username)
-                st.success(f"User {username} deleted successfully!")
-                break  # Refresh the page to reflect changes
-    else:
-        st.warning("No users found.")
-
-
 # Initialize tables
 create_tables()
+
+
